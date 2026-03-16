@@ -23,6 +23,3 @@ hidden_dims : {'dx': 256, 'dr': 256, 'de': 256, 'dy': 4, 'n_head': 8, 'dim_ffX':
 
 # lambda_train: [5, 0]
 lambda_train: [0, 0]
-
-
-
