@@ -30,6 +30,32 @@ POSSIBLE_KEY_PROGRESSIONS = [
   ["i", "III", "i"]
 ]
 
+# Each config describes a 4-phrase structure:
+#   beginning_end_key: which end-key pool to draw the opening phrase from
+#   phrases: (progression_key, required_end_key, transpose_semitones)
+STRUCTURE_CONFIGS = [
+    {  # I -> V -> I
+        "beginning_end_key": "I",
+        "phrases": [("V", "I", -5), ("I", "I", -5), ("IV", "I", 0)],
+    },
+    {  # i -> III -> V -> i
+        "beginning_end_key": "i",
+        "phrases": [("III", "I", 3), ("iii", "i", 7), ("IV", "i", 0)],
+    },
+    {  # I -> IV -> V -> I
+        "beginning_end_key": "I",
+        "phrases": [("IV", "I", 5), ("ii", "i", 7), ("IV", "I", 0)],
+    },
+    {  # i -> VI -> iv -> i
+        "beginning_end_key": "i",
+        "phrases": [("VI", "I", -4), ("vi", "i", -7), ("V", "i", 0)],
+    },
+    {  # i -> III -> iv -> i
+        "beginning_end_key": "i",
+        "phrases": [("III", "I", 3), ("ii", "i", 5), ("V", "i", 0)],
+    },
+]
+
 def extend_last_note_to_fill_measure(score, analysis):
   """
   Extends the last note in each part to complete the final measure up to the full measure length.
@@ -56,9 +82,6 @@ def extend_last_note_to_fill_measure(score, analysis):
       last_note.duration.quarterLength += remaining_duration
       for _ in range(int(remaining_duration)):
         analysis.append(analysis[-1])
-        # print(f"Extended {last_note} by {remaining_duration} quarter note(s) to complete the measure.")
-    # else:
-        # print("No extension needed or last item is a rest.")
 
   return score, analysis
 
@@ -134,272 +157,40 @@ def transpose_score(score, semitones):
     n.transpose(semitones, inPlace=True)
   return transposed_score
 
-def stitch_i_III_iv_i(score_analysis_starts, score_analysis_ends, score_analysis):
-  beginning = None
-  middle = None
-  middle2 = None
-  end = None
-
-  while beginning == middle or beginning == middle2 or beginning == end or \
-          middle == middle2 or middle == end or middle2 == end:
-    print("sampling possibilities...")
-    beginning = random.sample(score_analysis_ends['i'], 1)[0]
-    # print(len(score_analysis_ends['i']))
-
-    possible_starts_for_middle = POSSIBLE_STARTS_ENDING_FROM_TONIC["III"]
-    possible_scores = [
-      score for possible_start in possible_starts_for_middle for score in score_analysis_starts[possible_start]
-      if score in score_analysis_ends["I"]
-    ]
-    # print(len(possible_scores))
-    middle = random.sample(possible_scores, 1)[0]
-
-    possible_starts_for_middle2 = POSSIBLE_STARTS_ENDING_FROM_TONIC["ii"]
-    possible_scores = [
-      score for possible_start in possible_starts_for_middle2 for score in score_analysis_starts[possible_start]
-      if score in score_analysis_ends["i"]
-    ]
-    # print(len(possible_scores))
-    middle2 = random.sample(possible_scores, 1)[0]
-
-    possible_starts_for_end = POSSIBLE_STARTS_ENDING_FROM_TONIC["V"]
-    possible_scores = [
-      score for possible_start in possible_starts_for_end for score in score_analysis_starts[possible_start]
-      if score in score_analysis_ends["i"]
-    ]
-    # print(len(possible_scores))
-    end = random.sample(possible_scores, 1)[0]
-
-  beginning, beginning_analysis = extend_last_note_to_fill_measure(beginning, score_analysis[beginning])
-  middle, middle_analysis = extend_last_note_to_fill_measure(middle, score_analysis[middle])
-  middle2, middle2_analysis = extend_last_note_to_fill_measure(middle2, score_analysis[middle2])
-  end, end_analysis = extend_last_note_to_fill_measure(end, score_analysis[end])
-
-  write_inner_voices(beginning, beginning_analysis)
-  write_inner_voices(middle, middle_analysis)
-  write_inner_voices(middle2, middle2_analysis)
-  write_inner_voices(end, end_analysis)
-
-  middle = transpose_score(middle, 3)
-  middle2 = transpose_score(middle2, 5)
-
-  combined = combine_two_scores(beginning, middle)
-  combined = combine_two_scores(combined, middle2)
-  combined = combine_two_scores(combined, end)
-  return combined
-
-def stitch_i_III_V_i(score_analysis_starts, score_analysis_ends, score_analysis):
-  beginning = None
-  middle = None
-  middle2 = None
-  end = None
-
-  while beginning == middle or beginning == middle2 or beginning == end or \
-          middle == middle2 or middle == end or middle2 == end:
-    print("sampling possibilities...")
-    beginning = random.sample(score_analysis_ends['i'], 1)[0]
-    # print(len(score_analysis_ends['i']))
-
-    possible_starts_for_middle = POSSIBLE_STARTS_ENDING_FROM_TONIC["III"]
-    possible_scores = [
-      score for possible_start in possible_starts_for_middle for score in score_analysis_starts[possible_start]
-      if score in score_analysis_ends["I"]
+def _sample_candidates(progression_key, required_end_key, score_analysis_starts, score_analysis_ends):
+  possible_starts = POSSIBLE_STARTS_ENDING_FROM_TONIC[progression_key]
+  return [
+    score for start in possible_starts for score in score_analysis_starts[start]
+    if score in score_analysis_ends[required_end_key]
   ]
-    # print(len(possible_scores))
-    middle = random.sample(possible_scores, 1)[0]
 
-    possible_starts_for_middle2 = POSSIBLE_STARTS_ENDING_FROM_TONIC["iii"]
-    possible_scores = [
-      score for possible_start in possible_starts_for_middle2 for score in score_analysis_starts[possible_start]
-      if score in score_analysis_ends["i"]
-    ]
-    # print(len(possible_scores))
-    middle2 = random.sample(possible_scores, 1)[0]
+def stitch(score_analysis_starts, score_analysis_ends, score_analysis, config):
+  phrases = [None] * (len(config["phrases"]) + 1)
 
-    possible_starts_for_end = POSSIBLE_STARTS_ENDING_FROM_TONIC["IV"]
-    possible_scores = [
-      score for possible_start in possible_starts_for_end for score in score_analysis_starts[possible_start]
-      if score in score_analysis_ends["i"]
-    ]
-    # print(len(possible_scores))
-    end = random.sample(possible_scores, 1)[0]
-
-  beginning, beginning_analysis = extend_last_note_to_fill_measure(beginning, score_analysis[beginning])
-  middle, middle_analysis = extend_last_note_to_fill_measure(middle, score_analysis[middle])
-  middle2, middle2_analysis = extend_last_note_to_fill_measure(middle2, score_analysis[middle2])
-  end, end_analysis = extend_last_note_to_fill_measure(end, score_analysis[end])
-
-  write_inner_voices(beginning, beginning_analysis)
-  write_inner_voices(middle, middle_analysis)
-  write_inner_voices(middle2, middle2_analysis)
-  write_inner_voices(end, end_analysis)
-
-  middle = transpose_score(middle, 3)
-  middle2 = transpose_score(middle2, 7)
-
-  combined = combine_two_scores(beginning, middle)
-  combined = combine_two_scores(combined, middle2)
-  combined = combine_two_scores(combined, end)
-  return combined
-
-def stitch_I_V_I(score_analysis_starts, score_analysis_ends, score_analysis):
-  beginning = None
-  middle = None
-  middle2 = None
-  end = None
-
-  while beginning == middle or beginning == middle2 or beginning == end or \
-          middle == middle2 or middle == end or middle2 == end:
-    # print("sampling possibilities...")
-    beginning = random.sample(score_analysis_ends['I'], 1)[0]
-
-    possible_starts_for_middle = POSSIBLE_STARTS_ENDING_FROM_TONIC["V"]
-    possible_scores = [
-      score for possible_start in possible_starts_for_middle for score in score_analysis_starts[possible_start]
-      if score in score_analysis_ends["I"]
-    ]
-    # print(len(possible_scores))
-    middle = random.sample(possible_scores, 1)[0]
-
-    possible_starts_for_middle2 = POSSIBLE_STARTS_ENDING_FROM_TONIC["I"]
-    possible_scores = [
-      score for possible_start in possible_starts_for_middle2 for score in score_analysis_starts[possible_start]
-      if score in score_analysis_ends["I"]
-    ]
-    # print(len(possible_scores))
-    middle2 = random.sample(possible_scores, 1)[0]
-
-    possible_starts_for_end = POSSIBLE_STARTS_ENDING_FROM_TONIC["IV"]
-    possible_scores = [
-      score for possible_start in possible_starts_for_end for score in score_analysis_starts[possible_start]
-      if score in score_analysis_ends["I"]
-    ]
-    # print(len(possible_scores))
-    end = random.sample(possible_scores, 1)[0]
-
-  beginning, beginning_analysis = extend_last_note_to_fill_measure(beginning, score_analysis[beginning])
-  middle, middle_analysis = extend_last_note_to_fill_measure(middle, score_analysis[middle])
-  middle2, middle2_analysis = extend_last_note_to_fill_measure(middle2, score_analysis[middle2])
-  end, end_analysis = extend_last_note_to_fill_measure(end, score_analysis[end])
-
-  write_inner_voices(beginning, beginning_analysis)
-  write_inner_voices(middle, middle_analysis)
-  write_inner_voices(middle2, middle2_analysis)
-  write_inner_voices(end, end_analysis)
-
-  middle = transpose_score(middle, -5)
-  middle2 = transpose_score(middle2, -5)
-
-  combined = combine_two_scores(beginning, middle)
-  combined = combine_two_scores(combined, middle2)
-  combined = combine_two_scores(combined, end)
-  return combined
-
-def stitch_I_IV_V_I(score_analysis_starts, score_analysis_ends, score_analysis):
-  beginning = None
-  middle = None
-  middle2 = None
-  end = None
-
-  while beginning == middle or beginning == middle2 or beginning == end or \
-          middle == middle2 or middle == end or middle2 == end:
+  while len(set(id(p) for p in phrases)) != len(phrases):
     print("sampling possibilities...")
-    beginning = random.sample(score_analysis_ends['I'], 1)[0]
+    phrases[0] = random.choice(score_analysis_ends[config["beginning_end_key"]])
+    for i, (progression_key, required_end_key, _) in enumerate(config["phrases"]):
+      candidates = _sample_candidates(progression_key, required_end_key, score_analysis_starts, score_analysis_ends)
+      phrases[i + 1] = random.choice(candidates)
 
-    possible_starts_for_middle = POSSIBLE_STARTS_ENDING_FROM_TONIC["IV"]
-    possible_scores = [
-      score for possible_start in possible_starts_for_middle for score in score_analysis_starts[possible_start]
-      if score in score_analysis_ends["I"]
-    ]
-    # print(len(possible_scores))
-    middle = random.sample(possible_scores, 1)[0]
+  analyses = []
+  for i in range(len(phrases)):
+    phrases[i], analysis = extend_last_note_to_fill_measure(phrases[i], score_analysis[phrases[i]])
+    analyses.append(analysis)
+    write_inner_voices(phrases[i], analysis)
 
-    possible_starts_for_middle2 = POSSIBLE_STARTS_ENDING_FROM_TONIC["ii"]
-    possible_scores = [
-      score for possible_start in possible_starts_for_middle2 for score in score_analysis_starts[possible_start]
-      if score in score_analysis_ends["i"]
-    ]
-    # print(len(possible_scores))
-    middle2 = random.sample(possible_scores, 1)[0]
+  for i, (_, _, semitones) in enumerate(config["phrases"]):
+    if semitones:
+      phrases[i + 1] = transpose_score(phrases[i + 1], semitones)
 
-    possible_starts_for_end = POSSIBLE_STARTS_ENDING_FROM_TONIC["IV"]
-    possible_scores = [
-      score for possible_start in possible_starts_for_end for score in score_analysis_starts[possible_start]
-      if score in score_analysis_ends["I"]
-    ]
-    # print(len(possible_scores))
-    end = random.sample(possible_scores, 1)[0]
-
-  beginning, beginning_analysis = extend_last_note_to_fill_measure(beginning, score_analysis[beginning])
-  middle, middle_analysis = extend_last_note_to_fill_measure(middle, score_analysis[middle])
-  middle2, middle2_analysis = extend_last_note_to_fill_measure(middle2, score_analysis[middle2])
-  end, end_analysis = extend_last_note_to_fill_measure(end, score_analysis[end])
-
-  write_inner_voices(beginning, beginning_analysis)
-  write_inner_voices(middle, middle_analysis)
-  write_inner_voices(middle2, middle2_analysis)
-  write_inner_voices(end, end_analysis)
-
-  middle = transpose_score(middle, 5)
-  middle2 = transpose_score(middle2, 7)
-
-  combined = combine_two_scores(beginning, middle)
-  combined = combine_two_scores(combined, middle2)
-  combined = combine_two_scores(combined, end)
+  combined = phrases[0]
+  for phrase in phrases[1:]:
+    combined = combine_two_scores(combined, phrase)
   return combined
 
-def stitch_i_VI_iv_i(score_analysis_starts, score_analysis_ends, score_analysis):
-  beginning = None
-  middle = None
-  middle2 = None
-  end = None
-
-  while beginning == middle or beginning == middle2 or beginning == end or \
-          middle == middle2 or middle == end or middle2 == end:
-    print("sampling possibilities...")
-    beginning = random.sample(score_analysis_ends['i'], 1)[0]
-
-    possible_starts_for_middle = POSSIBLE_STARTS_ENDING_FROM_TONIC["VI"]
-    possible_scores = [
-      score for possible_start in possible_starts_for_middle for score in score_analysis_starts[possible_start]
-      if score in score_analysis_ends["I"]
-    ]
-    # print(len(possible_scores))
-    middle = random.sample(possible_scores, 1)[0]
-
-    possible_starts_for_middle2 = POSSIBLE_STARTS_ENDING_FROM_TONIC["vi"]
-    possible_scores = [
-      score for possible_start in possible_starts_for_middle2 for score in score_analysis_starts[possible_start]
-      if score in score_analysis_ends["i"]
-    ]
-    # print(len(possible_scores))
-    middle2 = random.sample(possible_scores, 1)[0]
-
-    possible_starts_for_end = POSSIBLE_STARTS_ENDING_FROM_TONIC["V"]
-    possible_scores = [
-      score for possible_start in possible_starts_for_end for score in score_analysis_starts[possible_start]
-      if score in score_analysis_ends["i"]
-    ]
-    # print(len(possible_scores))
-    end = random.sample(possible_scores, 1)[0]
-
-  beginning, beginning_analysis = extend_last_note_to_fill_measure(beginning, score_analysis[beginning])
-  middle, middle_analysis = extend_last_note_to_fill_measure(middle, score_analysis[middle])
-  middle2, middle2_analysis = extend_last_note_to_fill_measure(middle2, score_analysis[middle2])
-  end, end_analysis = extend_last_note_to_fill_measure(end, score_analysis[end])
-
-  write_inner_voices(beginning, beginning_analysis)
-  write_inner_voices(middle, middle_analysis)
-  write_inner_voices(middle2, middle2_analysis)
-  write_inner_voices(end, end_analysis)
-
-  middle = transpose_score(middle, -4)
-  middle2 = transpose_score(middle2, -7)
-
-  combined = combine_two_scores(beginning, middle)
-  combined = combine_two_scores(combined, middle2)
-  combined = combine_two_scores(combined, end)
-  return combined
+def get_structure():
+  return random.choice(STRUCTURE_CONFIGS)
 
 def get_organized_phrases():
   score_analyses = {}
@@ -420,34 +211,10 @@ def get_organized_phrases():
           continue
   return score_analysis_starts, score_analysis_ends, score_analyses
 
-def get_structure():
-  POSSIBLE_STRUCTURE_FUNCTIONS = [
-      stitch_I_V_I,
-      stitch_i_III_V_i,
-      stitch_I_IV_V_I,
-      stitch_i_VI_iv_i,
-      stitch_i_III_iv_i
-  ]
-  return random.sample(POSSIBLE_STRUCTURE_FUNCTIONS, 1)[0]
-
 def main():
   score_analysis_starts, score_analysis_ends, score_analyses = get_organized_phrases()
-  # with open("score_info.pkl", "wb") as f:
-  #     pickle.dump((score_analysis_starts, score_analysis_ends, score_analyses), f)
-
-  # stitch_I_V_I(score_analysis_starts, score_analysis_ends, score_analyses)
-  # stitch_i_III_V_i(score_analysis_starts, score_analysis_ends, score_analyses)
-  stitch_i_III_iv_i(score_analysis_starts, score_analysis_ends, score_analyses)
-  # stitch_I_IV_V_I(score_analysis_starts, score_analysis_ends, score_analyses)
-  # stitch_i_VI_iv_i(score_analysis_starts, score_analysis_ends, score_analyses)
-  # success = False
-  # while not success:
-  #     try:
-  #         stitch_I_V_I(score_analysis_starts, score_analysis_ends)
-  #         success = True
-  #     except ValueError as e:
-  #         print(e)
-  #         continue
+  config = get_structure()
+  return stitch(score_analysis_starts, score_analysis_ends, score_analyses, config)
 
 if __name__ == "__main__":
   main()

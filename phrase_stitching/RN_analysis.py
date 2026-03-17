@@ -95,7 +95,6 @@ def get_vertical_pairs(score: music21.stream.Score, include_octave=False):
   for t in time_points:
     n1 = get_active_note_at(t, voices[0])
     n2 = get_active_note_at(t, voices[1])
-    assert n1 and n2
     if isinstance(n1, note.Note) and isinstance(n2, note.Note):
       if include_octave:
         vertical_pairs[f"{t:.2f}"] = (n1.nameWithOctave, n2.nameWithOctave)
