@@ -4,3 +4,4 @@ SCORE_SECOND_INVERSION = -1
 SCORE_MAJOR_AND_MINOR = -2
 SCORE_INCLUDES_III = -0.25
 SCORE_INCLUDES_v = -0.25
+SCORE_SEVENTH_CHORD = -0.5   # prefer triad when 7th is absent from outer voices

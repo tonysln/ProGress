@@ -22,17 +22,23 @@ COMMON_ROMAN_NUMERALS_C = {
   "vi": ["A", "C", "E"],
   "VI": ["A-", "C", "E-"],
   "viio": ["B", "D", "F"],
-  "VII": ["B-", "D", "F", "A-"]
+  "VII": ["B-", "D", "F", "A-"],
+  # 7th chords for jazz/blues
+  "I7":    ["C", "E", "G", "B-"],   # dominant 7th on I (blues tonic)
+  "IV7":   ["F", "A", "C", "E-"],   # dominant 7th on IV (blues subdominant)
+  "ii7":   ["D", "F", "A", "C"],    # minor 7th (jazz pre-dominant)
+  "Imaj7": ["C", "E", "G", "B"],    # major 7th on I (jazz tonic)
+  "IVmaj7":["F", "A", "C", "E"],   # major 7th on IV (jazz subdominant)
 }
 
 FUNCTION_TO_ROMAN_NUMERAL = {
-  "tonic": ["I", "i", "iii", "III", "vi", "VI"],
-  "predominant": ["ii", "iio", "IV", "iv", "v", "vi", "VI", "VII"],
+  "tonic": ["I", "i", "iii", "III", "vi", "VI", "Imaj7", "I7"],
+  "predominant": ["ii", "iio", "IV", "iv", "v", "vi", "VI", "VII", "ii7", "IV7", "IVmaj7"],
   "dominant": ["V", "viio"]
 }
 
 MODES_ROMAN_NUMERALS = {
-  "major": {"I", "ii", "iii", "IV", "V", "vi", "viio"},
+  "major": {"I", "ii", "iii", "IV", "V", "vi", "viio", "Imaj7", "ii7", "IVmaj7", "I7", "IV7"},
   "minor": {"i", "iio", "III", "iv", "v", "V", "VI", "viio", "VII"}
 }
 
@@ -56,11 +62,28 @@ UNLIKELY_PROGRESSIONS = {
   "vi": ["i"],
   "VI": ["I"],
   "viio": ["ii", "iio", "iii", "III", "iv", "IV"],
-  "VII": ["I", "ii", "iio", "IV", "iv", "v", "V", "vi", "VI", "viio"]
+  "VII": ["I", "ii", "iio", "IV", "iv", "v", "V", "vi", "VI", "viio"],
+  # 7th chords
+  "I7":    [],
+  "IV7":   ["iii", "III", "v", "vi", "VI"],
+  "ii7":   ["IV", "iv", "vi", "VI", "v"],
+  "Imaj7": [],
+  "IVmaj7":["iii", "III", "v", "vi", "VI"],
 }
 
 class InvalidAnalysisException(Exception):
   def __init__(self, filepath): super().__init__(f"Invalid analysis for file: {filepath}")
+
+def get_beat_unit(score):
+  """Return the beat duration in quarter lengths for the score's time signature.
+  Handles simple (4/4, 3/4, 5/4, 7/8), compound (6/8, 9/8, 12/8), and odd meters.
+  """
+  ts = score.recurse().getElementsByClass('TimeSignature').first()
+  if ts is None: return 1.0
+  num, den = ts.numerator, ts.denominator
+  # Compound meters (6/8, 9/8, 12/8): beat = dotted quarter = 3 eighth notes
+  if num % 3 == 0 and num > 3: return 3.0 * (4.0 / den)
+  return 4.0 / den
 
 def get_active_note_at(time, voice):
   """Get the note sounding at a specific time in a voice"""
@@ -112,19 +135,23 @@ def determine_possible_Roman_numerals(vertical_pairs):
     potential_RNs[offset] = rnum
   return potential_RNs
 
-def get_starting_potential_Romans(potential_Roman_numerals, vertical_pairs):
+def get_starting_potential_Romans(potential_Roman_numerals, vertical_pairs, beat_unit=1.0):
+  b0 = f'{0:.2f}'
+  b1 = f'{beat_unit:.2f}'
+  b2 = f'{beat_unit * 2:.2f}'
   return [
-    potential_Roman_numerals['0.00'], potential_Roman_numerals['1.00'], potential_Roman_numerals['2.00']
+    potential_Roman_numerals[b0], potential_Roman_numerals[b1], potential_Roman_numerals[b2]
   ],[
-    vertical_pairs['0.00'][1], vertical_pairs['1.00'][1], vertical_pairs['2.00'][1]
+    vertical_pairs[b0][1], vertical_pairs[b1][1], vertical_pairs[b2][1]
   ]
 
-def get_ending_potential_Romans(potential_Roman_numerals, vertical_pairs):
-  last_beat = max([math.floor(float(offset)) for offset in potential_Roman_numerals.keys()])
+def get_ending_potential_Romans(potential_Roman_numerals, vertical_pairs, beat_unit=1.0):
+  max_offset = max(float(offset) for offset in potential_Roman_numerals.keys())
+  last_beat = round((max_offset // beat_unit) * beat_unit, 5)
   return [
-    potential_Roman_numerals[f'{last_beat - i:.2f}'] for i in range(2, -1, -1)
+    potential_Roman_numerals[f'{last_beat - beat_unit * i:.2f}'] for i in range(2, -1, -1)
   ], [
-    vertical_pairs[f'{last_beat - i:.2f}'][1] for i in range(2, -1, -1)
+    vertical_pairs[f'{last_beat - beat_unit * i:.2f}'][1] for i in range(2, -1, -1)
   ]
 
 def get_potential_Romans(keys, potential_Roman_numerals, vertical_pairs):
@@ -222,6 +249,8 @@ def score_valid_progressions(valid_progressions, associated_bass_notes):
       # III and v are relatively rare in reality
       if RN == "iii" or RN == "III": scores[progression] += SCORE_INCLUDES_III
       if RN == "v": scores[progression] += SCORE_INCLUDES_v
+      # prefer triads over 7th chords when both match (7th absent from outer voices)
+      if len(COMMON_ROMAN_NUMERALS_C[RN]) == 4: scores[progression] += SCORE_SEVENTH_CHORD
   return scores
 
 def choose_highest_scoring_progression(scores):
@@ -237,6 +266,7 @@ def rank_progressions_highest_score_first(scores):
 
 def find_file_start_and_end(filepath):
   score = converter.parse(filepath)
+  beat_unit = get_beat_unit(score)
   vertical_pairs = get_vertical_pairs(score)
 
   has_problematic_start = False
@@ -244,7 +274,7 @@ def find_file_start_and_end(filepath):
 
   potential_Roman_numerals = determine_possible_Roman_numerals(vertical_pairs)
 
-  starting_numerals, starting_bass = get_starting_potential_Romans(potential_Roman_numerals, vertical_pairs)
+  starting_numerals, starting_bass = get_starting_potential_Romans(potential_Roman_numerals, vertical_pairs, beat_unit)
   valid_starting_RN_sequences = determine_most_likely_Roman_numerals(starting_numerals)
   pruned_valid_starting_RN_sequences = prune_unlikely_progressions(valid_starting_RN_sequences)
   start_scores = score_valid_progressions(pruned_valid_starting_RN_sequences, starting_bass)
@@ -253,7 +283,7 @@ def find_file_start_and_end(filepath):
   except InvalidAnalysisException as e:
     has_problematic_start = True
 
-  ending_numerals, ending_bass = get_ending_potential_Romans(potential_Roman_numerals, vertical_pairs)
+  ending_numerals, ending_bass = get_ending_potential_Romans(potential_Roman_numerals, vertical_pairs, beat_unit)
   valid_ending_RN_sequences = determine_most_likely_Roman_numerals(ending_numerals)
   pruned_valid_ending_RN_sequences = prune_unlikely_progressions(valid_ending_RN_sequences)
   end_scores = score_valid_progressions(pruned_valid_ending_RN_sequences, ending_bass)
@@ -268,9 +298,9 @@ def find_file_start_and_end(filepath):
     return None, None, None
   return score, best_start, best_end
 
-def get_ranked_triplets_from_beat(filepath, curr_beat, potential_Roman_numerals, vertical_pairs):
-  next_beat = f"{(float(curr_beat) + 1):.2f}"
-  next_next_beat = f"{(float(curr_beat) + 2):.2f}"
+def get_ranked_triplets_from_beat(filepath, curr_beat, potential_Roman_numerals, vertical_pairs, beat_unit=1.0):
+  next_beat = f"{(float(curr_beat) + beat_unit):.2f}"
+  next_next_beat = f"{(float(curr_beat) + beat_unit * 2):.2f}"
 
   # Find and score best potential RN triple
   numerals, bass = get_potential_Romans([curr_beat, next_beat, next_next_beat], potential_Roman_numerals, vertical_pairs)
@@ -327,10 +357,13 @@ def check_illegal_harmonics_on_integer_beats(score, illegal_intervals=('m2', "M2
       part2.recurse().stream().notesAndRests.stream().highestOffset
   )
 
-  # Generate integer beat offsets up to the ceiling of max_offset
-  integer_beats = range(0, math.ceil(max_offset) + 1)
+  # Generate beat-aligned offsets according to the actual time signature
+  beat_unit = get_beat_unit(score)
+  num_beats = int(max_offset / beat_unit) + 2
+  beat_offsets = [round(i * beat_unit, 5) for i in range(num_beats)]
 
-  for offset in integer_beats:
+  for offset in beat_offsets:
+    if offset > max_offset: break
     n1 = part1.recurse().stream().getElementAtOrBefore(offset, [note.Note])
     n2 = part2.recurse().stream().getElementAtOrBefore(offset, [note.Note])
 
@@ -352,6 +385,7 @@ def check_illegal_harmonics_on_integer_beats(score, illegal_intervals=('m2', "M2
 
 def analyze_entire_phrase(filepath):
   score = converter.parse(filepath)
+  beat_unit = get_beat_unit(score)
   vertical_pairs = get_vertical_pairs(score)
   potential_Roman_numerals = determine_possible_Roman_numerals(vertical_pairs)
   is_clearly_major = all([n not in ['E-', 'A-', 'B-'] for notes in vertical_pairs.values() for n in notes])
@@ -360,10 +394,10 @@ def analyze_entire_phrase(filepath):
 
   curr_beat = '0.00'
   all_scores = []
-  while f"{(float(curr_beat) + 2):.2f}" in potential_Roman_numerals.keys():
-    ranked_scores = get_ranked_triplets_from_beat(filepath, curr_beat, potential_Roman_numerals, vertical_pairs)
+  while f"{(float(curr_beat) + beat_unit * 2):.2f}" in potential_Roman_numerals.keys():
+    ranked_scores = get_ranked_triplets_from_beat(filepath, curr_beat, potential_Roman_numerals, vertical_pairs, beat_unit)
     all_scores.append(ranked_scores)
-    curr_beat = f"{(float(curr_beat) + 1):.2f}"
+    curr_beat = f"{(float(curr_beat) + beat_unit):.2f}"
   # pprint(all_scores)
 
   simplest_route = [beat[0][0][0] for beat in all_scores]

@@ -1,6 +1,6 @@
 import copy
 from music21 import interval, note, stream, meter, key
-from phrase_stitching.RN_analysis import get_vertical_pairs, analyze_entire_phrase, COMMON_ROMAN_NUMERALS_C
+from phrase_stitching.RN_analysis import get_vertical_pairs, analyze_entire_phrase, COMMON_ROMAN_NUMERALS_C, get_beat_unit
 
 IDEAL_DOUBLING = {
   "I": "root",
@@ -16,18 +16,26 @@ IDEAL_DOUBLING = {
   "vi": "root",
   "VI": "root",
   "viio": "third",
-  "VII": "root"
+  "VII": "root",
+  # 7th chords — all four tones distinct, so double the root
+  "I7":    "root",
+  "IV7":   "root",
+  "ii7":   "third",
+  "Imaj7": "root",
+  "IVmaj7":"root",
 }
 
-def get_likely_inner_voices(score, analysis):
+def get_likely_inner_voices(score, analysis, beat_unit=1.0):
   vertical_pairs = get_vertical_pairs(score)
   inner_voice_notes = []
   curr_beat = 0
-  while curr_beat < max([float(k) for k in vertical_pairs.keys()]):
+  max_offset = max(float(k) for k in vertical_pairs.keys())
+  while curr_beat * beat_unit < max_offset:
     curr_RN = analysis[curr_beat]
     harmony_notes = COMMON_ROMAN_NUMERALS_C[curr_RN]
     already_in_score = {note: False for note in harmony_notes}
-    notes_in_beat = set([note for time,val in vertical_pairs.items() for note in val if curr_beat-0.01 <= float(time) < curr_beat+1])
+    beat_offset = curr_beat * beat_unit
+    notes_in_beat = set([note for time,val in vertical_pairs.items() for note in val if beat_offset - 0.01 <= float(time) < beat_offset + beat_unit])
     for note in notes_in_beat:
       if note in already_in_score.keys(): already_in_score[note] = True
 
@@ -44,7 +52,7 @@ def get_likely_inner_voices(score, analysis):
     curr_beat += 1
   return inner_voice_notes
 
-def assign_voices(note_pairs, score):
+def assign_voices(note_pairs, score, beat_unit=1.0):
   vertical_pairs = get_vertical_pairs(score, include_octave=True)
   outer_pairs = [pair for k, pair in vertical_pairs.items() if float(k) % 1 == 0]
   voice1_notes = []
@@ -71,9 +79,9 @@ def assign_voices(note_pairs, score):
         best_option = opt1,opt2
 
     chosen1,chosen2 = best_option
-    assert chosen1 and chosen2
-    chosen1.quarterLength = 1
-    chosen2.quarterLength = 1
+    assert chosen1 is not None and chosen2 is not None
+    chosen1.quarterLength = beat_unit
+    chosen2.quarterLength = beat_unit
 
     voice1_notes.append(chosen1)
     voice2_notes.append(chosen2)
@@ -133,14 +141,16 @@ def merge_repeats_by_measure(part):
   return new_part
 
 def write_inner_voices(score, analysis):
-  inner_voices = get_likely_inner_voices(score, analysis)
-  # print(inner_voices)
-  voice1, voice2 = assign_voices(inner_voices, score)
+  beat_unit = get_beat_unit(score)
+  inner_voices = get_likely_inner_voices(score, analysis, beat_unit)
+  print('Inner voices:', inner_voices)
+  voice1, voice2 = assign_voices(inner_voices, score, beat_unit)
 
   part1 = stream.Part()
   part2 = stream.Part()
 
-  time_sig = meter.TimeSignature('4/4')
+  ts = score.recurse().getElementsByClass(meter.TimeSignature).first()
+  time_sig = copy.deepcopy(ts) if ts else meter.TimeSignature('4/4')
   part1.append(time_sig)
   part2.append(time_sig)
 

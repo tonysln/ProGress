@@ -15,20 +15,20 @@ POSSIBLE_STARTS_ENDING_FROM_TONIC = {
   "ii": ["VII", "III", "i", "I"],  # C -> d
   "V": ["IV", "V", "ii", "viio", "iio", "iv"],  # C -> G
   "IV": ["V", "I", "vi"],  # C -> F
-  "vi": ["III", "iv", "VI", "iio"],  # C -> a
+  "vi": ["III", "iv", "VI", "iio", "IV", "I"],  # C -> a (IV/I added for rock)
   "iii": ["VI", "iio", "iv", "V", "viio"],  # C -> e
   "i": ["i", "iio", "III", "iv", "v", "V", "VI", "VII", "viio"],  # c -> c
   "v": ["iv", "V", "viio", "iio"],  # c -> g
   "iv": ["v", "V", "iv", "iio"],  # c -> f
   "VI": ["iii", "IV", "vi", "ii"],  # c -> Ab
-  "III": ["vi", "ii", "IV", "V", "viio"]  # c -> Eb
+  "III": ["vi", "ii", "IV", "V", "viio"],  # c -> Eb
+  # 7th chord entries
+  "I7":    ["I7", "ii7", "IV7", "V", "I", "ii", "IV", "viio"],  # blues tonic
+  "IV7":   ["V", "I7", "I", "vi", "ii7"],                       # blues subdominant
+  "ii7":   ["V", "I7", "Imaj7", "I"],                           # jazz pre-dominant
+  "Imaj7": ["Imaj7", "ii7", "IVmaj7", "I", "ii", "IV", "V", "vi"],  # jazz tonic
+  "IVmaj7":["V", "Imaj7", "I", "vi", "ii7"],                   # jazz subdominant
 }
-
-POSSIBLE_KEY_PROGRESSIONS = [
-  ["I", "iii", "V", "I"],
-  ["I", "V", "I"],
-  ["i", "III", "i"]
-]
 
 # Each config describes a 4-phrase structure:
 #   beginning_end_key: which end-key pool to draw the opening phrase from
@@ -53,6 +53,18 @@ STRUCTURE_CONFIGS = [
     {  # i -> III -> iv -> i
         "beginning_end_key": "i",
         "phrases": [("III", "I", 3), ("ii", "i", 5), ("V", "i", 0)],
+    },
+    {  # Blues: I7 -> IV7 -> I7 -> V
+        "beginning_end_key": "I7",
+        "phrases": [("I7", "IV7", 0), ("IV7", "I7", 0), ("I7", "V", 0)],
+    },
+    {  # Jazz: Imaj7 -> ii7 -> V -> Imaj7
+        "beginning_end_key": "Imaj7",
+        "phrases": [("Imaj7", "ii7", 0), ("ii7", "V", 0), ("V", "Imaj7", 0)],
+    },
+    {  # Rock: I -> V -> vi -> I
+        "beginning_end_key": "I",
+        "phrases": [("I", "V", 7), ("V", "vi", 0), ("vi", "I", 0)],
     },
 ]
 
@@ -168,7 +180,7 @@ def stitch(score_analysis_starts, score_analysis_ends, score_analysis, config):
   phrases = [None] * (len(config["phrases"]) + 1)
 
   while len(set(id(p) for p in phrases)) != len(phrases):
-    print("sampling possibilities...")
+    print("Sampling possibilities...")
     phrases[0] = random.choice(score_analysis_ends[config["beginning_end_key"]])
     for i, (progression_key, required_end_key, _) in enumerate(config["phrases"]):
       candidates = _sample_candidates(progression_key, required_end_key, score_analysis_starts, score_analysis_ends)
@@ -207,8 +219,7 @@ def get_organized_phrases():
         score_analyses[score] = analysis
         score_analysis_starts[analysis[0]].append(score)
         score_analysis_ends[analysis[-1]].append(score)
-      except (InvalidAnalysisException, FileNotFoundError) as e:
-          continue
+      except (InvalidAnalysisException, FileNotFoundError) as e: continue
   return score_analysis_starts, score_analysis_ends, score_analyses
 
 def main():
